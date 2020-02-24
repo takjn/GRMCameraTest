@@ -50,11 +50,10 @@
 #define FRAME_BUFFER_STRIDE_2  (((VIDEO_PIXEL_HW * 2) + 31u) & ~31u)
 #define FRAME_BUFFER_HEIGHT    (VIDEO_PIXEL_VW)
 
-static DisplayBase Display;
-static DisplayBase Display2;
+static DisplayBase Display;     // for MIPI camera and LCD
+static DisplayBase Display2;    // for OV7725 camera
 static uint8_t fbuf_bayer[FRAME_BUFFER_STRIDE * FRAME_BUFFER_HEIGHT]__attribute((aligned(128)));
-static uint8_t fbuf_yuv[FRAME_BUFFER_STRIDE_2 * FRAME_BUFFER_HEIGHT]__attribute((aligned(32)));
-static uint8_t fbuf_yuv2[FRAME_BUFFER_STRIDE_2 * FRAME_BUFFER_HEIGHT]__attribute((aligned(32)));
+static uint8_t fbuf_yuv[FRAME_BUFFER_STRIDE_2 * FRAME_BUFFER_HEIGHT * 2]__attribute((aligned(32)));
 static uint8_t fbuf_overlay[FRAME_BUFFER_STRIDE * FRAME_BUFFER_HEIGHT]__attribute((section("NC_BSS"),aligned(32)));
 static uint8_t drp_lib_id[R_DK2_TILE_NUM] = {0};
 static Thread drpTask(osPriorityHigh);
@@ -85,33 +84,20 @@ static void Start_LCD_Display(void) {
     DisplayBase::rect_t rect;
     DisplayBase::clut_t clut_param;
 
+    // 2カメラ分をまとめて表示する
     rect.vs = 0;
-    rect.vw = VIDEO_PIXEL_VW;
+    rect.vw = LCD_PIXEL_HEIGHT;
     rect.hs = 0;
     rect.hw = VIDEO_PIXEL_HW;
     Display.Graphics_Read_Setting(
         DisplayBase::GRAPHICS_LAYER_0,
-        (void *)fbuf_yuv,
+        (void *)fbuf_yuv + (LCD_PIXEL_HEIGHT - VIDEO_PIXEL_VW)/2 * FRAME_BUFFER_STRIDE_2,
         FRAME_BUFFER_STRIDE_2,
         DisplayBase::GRAPHICS_FORMAT_YCBCR422,
         DisplayBase::WR_RD_WRSWA_32_16_8BIT,
         &rect
     );
     Display.Graphics_Start(DisplayBase::GRAPHICS_LAYER_0);
-
-    // rect.vs = 0;
-    // rect.vw = VIDEO_PIXEL_VW;
-    // rect.hs = VIDEO_PIXEL_HW;
-    // rect.hw = VIDEO_PIXEL_HW;
-    // Display.Graphics_Read_Setting(
-    //     DisplayBase::GRAPHICS_LAYER_0,
-    //     (void *)fbuf_yuv2,
-    //     FRAME_BUFFER_STRIDE_2,
-    //     DisplayBase::GRAPHICS_FORMAT_YCBCR422,
-    //     DisplayBase::WR_RD_WRSWA_32_16BIT,
-    //     &rect
-    // );
-    // Display.Graphics_Start(DisplayBase::GRAPHICS_LAYER_0);
 
     memset(fbuf_overlay, 0, sizeof(fbuf_overlay));
     clut_param.color_num = sizeof(clut_data_resut) / sizeof(uint32_t);
@@ -141,6 +127,8 @@ static void drp_task(void) {
 
     AsciiFont ascii_font(fbuf_overlay, VIDEO_PIXEL_HW, VIDEO_PIXEL_VW, FRAME_BUFFER_STRIDE, DATA_SIZE_PER_PIC);
 
+    // 暫定２カメラ対応：カメラの初期化とスタートをセットで行う
+    // 先にLCDとMIPIカメラを初期化してカメラをスタートする
     EasyAttach_Init(Display);
     // Video capture setting for MIPI camera
     Display.Video_Write_Setting(
@@ -157,15 +145,15 @@ static void drp_task(void) {
     Display.Graphics_Irq_Handler_Set(DisplayBase::INT_TYPE_S0_VFIELD, 0, IntCallbackFunc_Vfield);
     EasyAttach_CameraStart(Display, DisplayBase::VIDEO_INPUT_CHANNEL_0);
 
+    // OV7725(GR-LYCHEEのカメラ)を初期化してカメラをスタートする
     EasyAttach_OV7725_Init(Display2);
-    // Video capture setting for OV7725 camera
     Display2.Video_Write_Setting(
         DisplayBase::VIDEO_INPUT_CHANNEL_0,
         DisplayBase::COL_SYS_NTSC_358,
-        (void *)fbuf_yuv2,
+        (void *)(fbuf_yuv + (FRAME_BUFFER_STRIDE_2 * FRAME_BUFFER_HEIGHT)),
         FRAME_BUFFER_STRIDE_2,
         DisplayBase::VIDEO_FORMAT_YCBCR422,
-        DisplayBase::WR_RD_WRSWA_32_16BIT,
+        DisplayBase::WR_RD_WRSWA_32_16_8BIT,
         VIDEO_PIXEL_VW,
         VIDEO_PIXEL_HW
     );
@@ -202,7 +190,7 @@ static void drp_task(void) {
 
 
         // Overlay some message
-        sprintf(str, "Multiple result display demo");
+        sprintf(str, "Multiple camera demo");
         ascii_font.DrawStr(str, 5, 5 + (AsciiFont::CHAR_PIX_HEIGHT + 1) * 0, 1, 2);
     }
 }

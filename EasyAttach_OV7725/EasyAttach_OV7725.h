@@ -33,10 +33,4 @@ extern DisplayBase::graphics_error_t EasyAttach_OV7725_CameraStart(
     DisplayBase::video_input_channel_t channel = DisplayBase::VIDEO_INPUT_CHANNEL_0
 );
 
-// extern void EasyAttach_SetTypicalBacklightVol(float typ_vol);
-
-// extern void EasyAttach_LcdBacklight(bool type = true);
-
-// extern void EasyAttach_LcdBacklight(float value);
-
 #endif
